@@ -1,0 +1,63 @@
+# kubectl apply -k k8s/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - auth/namespace.yaml
+  - auth/configmap.yaml
+  - auth/secret.yaml
+  - auth/job-db-init.yaml
+  - auth/deployment.yaml
+  - auth/service.yaml
+  - auth/ingress.yaml
+
+  - flag/namespace.yaml
+  - flag/configmap.yaml
+  - flag/secret.yaml
+  - flag/job-db-init.yaml
+  - flag/deployment.yaml
+  - flag/service.yaml
+  - flag/ingress.yaml
+
+  - targeting/namespace.yaml
+  - targeting/configmap.yaml
+  - targeting/secret.yaml
+  - targeting/job-db-init.yaml
+  - targeting/deployment.yaml
+  - targeting/service.yaml
+  - targeting/ingress.yaml
+
+  - evaluation/namespace.yaml
+  - evaluation/serviceaccount.yaml
+  - evaluation/configmap.yaml
+  - evaluation/secret.yaml
+  - evaluation/deployment.yaml
+  - evaluation/service.yaml
+  - evaluation/ingress.yaml
+  - evaluation/hpa.yaml
+
+  - analytics/namespace.yaml
+  - analytics/serviceaccount.yaml
+  - analytics/configmap.yaml
+  - analytics/secret.yaml
+  - analytics/deployment.yaml
+  - analytics/service.yaml
+  - analytics/hpa.yaml
+
+# o push-ecr.sh troca o registry e a tag
+images:
+  - name: auth-service
+    newName: 123456789012.dkr.ecr.us-east-1.amazonaws.com/auth-service
+    newTag: v1
+  - name: flag-service
+    newName: 123456789012.dkr.ecr.us-east-1.amazonaws.com/flag-service
+    newTag: v1
+  - name: targeting-service
+    newName: 123456789012.dkr.ecr.us-east-1.amazonaws.com/targeting-service
+    newTag: v1
+  - name: evaluation-service
+    newName: 123456789012.dkr.ecr.us-east-1.amazonaws.com/evaluation-service
+    newTag: v1
+  - name: analytics-service
+    newName: 123456789012.dkr.ecr.us-east-1.amazonaws.com/analytics-service
+    newTag: v1

@@ -1,0 +1,52 @@
+# aplica o db/init.sql no rds
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: targeting-service-db-init
+  namespace: tm-targeting
+  labels:
+    app: targeting-service-db-init
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: targeting-service-db-init
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        # pega o init.sql da imagem do serviço
+        - name: copy-schema
+          image: targeting-service
+          command: ["cp", "/app/db/init.sql", "/sql/init.sql"]
+          securityContext:
+            runAsUser: 10001
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+          volumeMounts:
+            - name: sql
+              mountPath: /sql
+      containers:
+        - name: psql
+          image: postgres:16-alpine
+          envFrom:
+            - secretRef:
+                name: targeting-service-secret
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              until pg_isready -d "$DATABASE_URL"; do echo "aguardando RDS..."; sleep 3; done
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /sql/init.sql
+              echo "schema aplicado"
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          volumeMounts:
+            - name: sql
+              mountPath: /sql
+      volumes:
+        - name: sql
+          emptyDir: {}

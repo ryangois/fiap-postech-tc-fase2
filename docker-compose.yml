@@ -1,0 +1,163 @@
+# ambiente local: 5 serviços + 2 postgres, redis e dynamodb local
+# docker compose up -d --build
+
+name: togglemaster
+
+x-aws-env: &aws-env
+  AWS_REGION: ${AWS_REGION:-us-east-1}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-local}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-local}
+  AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+
+services:
+  # bancos
+  postgres-auth:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-togglemaster}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-togglemaster}
+      POSTGRES_DB: auth_db
+      SERVICE_API_KEY: ${SERVICE_API_KEY:-tm_key_local_dev_evaluation_service}
+    volumes:
+      - ./auth-service/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./local/postgres-auth/02-seed-service-key.sh:/docker-entrypoint-initdb.d/02-seed-service-key.sh:ro
+      - pg-auth-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d auth_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # flags_db e targeting_db na mesma instância
+  postgres-shared:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-togglemaster}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-togglemaster}
+      POSTGRES_DB: flags_db
+    volumes:
+      - ./flag-service/db/init.sql:/sql/flags.sql:ro
+      - ./targeting-service/db/init.sql:/sql/targeting.sql:ro
+      - ./local/postgres-shared/01-init-dbs.sh:/docker-entrypoint-initdb.d/01-init-dbs.sh:ro
+      - pg-shared-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d targeting_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  dynamodb-local:
+    image: amazon/dynamodb-local:2.5.2
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+    ports:
+      - "8000:8000"
+
+  # cria a tabela e sai
+  dynamodb-init:
+    image: amazon/aws-cli:2.17.0
+    environment:
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    entrypoint: ["/bin/sh", "/init/create-table.sh"]
+    volumes:
+      - ./local/dynamodb/create-table.sh:/init/create-table.sh:ro
+    depends_on:
+      - dynamodb-local
+    restart: "no"
+
+  # serviços
+  auth-service:
+    build: ./auth-service
+    image: togglemaster/auth-service:local
+    environment:
+      PORT: "8001"
+      DATABASE_URL: postgres://${POSTGRES_USER:-togglemaster}:${POSTGRES_PASSWORD:-togglemaster}@postgres-auth:5432/auth_db?sslmode=disable
+      MASTER_KEY: ${MASTER_KEY:-admin-secreto-123}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+
+  flag-service:
+    build: ./flag-service
+    image: togglemaster/flag-service:local
+    environment:
+      PORT: "8002"
+      DATABASE_URL: postgres://${POSTGRES_USER:-togglemaster}:${POSTGRES_PASSWORD:-togglemaster}@postgres-shared:5432/flags_db
+      AUTH_SERVICE_URL: http://auth-service:8001
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres-shared:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+
+  targeting-service:
+    build: ./targeting-service
+    image: togglemaster/targeting-service:local
+    environment:
+      PORT: "8003"
+      DATABASE_URL: postgres://${POSTGRES_USER:-togglemaster}:${POSTGRES_PASSWORD:-togglemaster}@postgres-shared:5432/targeting_db
+      AUTH_SERVICE_URL: http://auth-service:8001
+    ports:
+      - "8003:8003"
+    depends_on:
+      postgres-shared:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+
+  evaluation-service:
+    build: ./evaluation-service
+    image: togglemaster/evaluation-service:local
+    environment:
+      <<: *aws-env
+      PORT: "8004"
+      REDIS_URL: redis://redis:6379
+      FLAG_SERVICE_URL: http://flag-service:8002
+      TARGETING_SERVICE_URL: http://targeting-service:8003
+      # mesma chave semeada no postgres-auth
+      SERVICE_API_KEY: ${SERVICE_API_KEY:-tm_key_local_dev_evaluation_service}
+      # sem url os eventos só vão pro log
+      AWS_SQS_URL: ${AWS_SQS_URL:-}
+    ports:
+      - "8004:8004"
+    depends_on:
+      redis:
+        condition: service_healthy
+      flag-service:
+        condition: service_healthy
+      targeting-service:
+        condition: service_healthy
+
+  analytics-service:
+    build: ./analytics-service
+    image: togglemaster/analytics-service:local
+    environment:
+      <<: *aws-env
+      PORT: "8005"
+      # não tem sqs local, usa a fila da aws
+      AWS_SQS_URL: ${AWS_SQS_URL:-http://sqs-nao-configurada.invalid/fila}
+      AWS_DYNAMODB_TABLE: ToggleMasterAnalytics
+      # só o dynamodb aponta pro container local
+      AWS_ENDPOINT_URL_DYNAMODB: http://dynamodb-local:8000
+    ports:
+      - "8005:8005"
+    depends_on:
+      dynamodb-init:
+        condition: service_completed_successfully
+
+volumes:
+  pg-auth-data:
+  pg-shared-data:

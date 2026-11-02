@@ -1,0 +1,25 @@
+# um ingress por namespace, o nginx junta tudo no mesmo lb
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: auth-service
+  namespace: tm-auth
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /validate
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 8001
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 8001
