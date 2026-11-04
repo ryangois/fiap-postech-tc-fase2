@@ -69,16 +69,19 @@ Os `secret.yaml` são gerados pelo `scripts/gen-secrets.sh` e não vão pro Git.
 
 ## Infra na AWS
 
-Recursos (conta pessoal, opção B):
+Recursos (conta pessoal, opção B). O cluster foi criado com eksctl e o resto com a AWS CLI:
 
 - EKS criado com eksctl (`eksctl/cluster.yaml`): node group (mín. 1, desejado 2, máx. 4), add-on Pod Identity e as roles dos pods
 - 5 repositórios no ECR, um por serviço
-- 3 RDS PostgreSQL: `auth_db`, `flags_db` e `targeting_db`
+- 2 RDS PostgreSQL: um com o `auth_db` e outro com o `flags_db` e o `targeting_db` (ver abaixo)
 - 1 ElastiCache Redis
 - tabela `ToggleMasterAnalytics` no DynamoDB (chave `event_id`, String)
 - 1 fila SQS Standard
 
 Os security groups do RDS e do Redis liberam 5432 e 6379 só para a rede do cluster (192.168.0.0/16).
+
+Sobre os bancos: o enunciado pede 3 RDS, mas a conta está no free plan da AWS, que barra a criação de mais de 2 instâncias de RDS ("maximum number of instances available with free plan accounts"). Por isso o targeting-service ficou na mesma instância do flag-service, mas com database próprio (`targeting_db`), sem compartilhar tabelas. Numa conta sem essa restrição é só criar a terceira instância e trocar a `TARGETING_DATABASE_URL`. Pelo mesmo motivo os nós são `c7i-flex.large`, que é elegível ao free tier.
+
 
 Cluster (trocar o id da conta no yaml antes):
 

@@ -19,8 +19,9 @@ addons:
   - name: eks-pod-identity-agent
 
 managedNodeGroups:
-  - name: default
-    instanceType: t3.medium
+  # conta no free plan só aceita tipos elegíveis ao free tier
+  - name: workers
+    instanceType: c7i-flex.large
     minSize: 1
     desiredCapacity: 2
     maxSize: 4
